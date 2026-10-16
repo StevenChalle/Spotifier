@@ -1,0 +1,51 @@
+# Render Blueprint : https://render.com/docs/blueprint-spec
+# Site statique reconstruit à chaque push sur main.
+services:
+  - type: web
+    runtime: static
+    name: spotifier
+    branch: main
+    # --include=dev : si Render pose NODE_ENV=production, npm ci saute vite et
+    # typescript, et le build meurt sur « tsc: not found ».
+    buildCommand: npm ci --include=dev && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      - key: NODE_VERSION
+        value: '24.22.0'
+      # Les VITE_* sont figées dans le bundle au build : à renseigner dans
+      # l'interface Render avant le premier déploiement (sync: false = hors dépôt).
+      - key: VITE_SPOTIFY_CLIENT_ID
+        sync: false
+      # https://<nom-du-service>.onrender.com/callback, aussi déclarée côté Spotify.
+      - key: VITE_SPOTIFY_REDIRECT_URI
+        sync: false
+      - key: VITE_LASTFM_API_KEY
+        sync: false
+    routes:
+      # Routage côté client (BrowserRouter, /callback) : les chemins inconnus
+      # reçoivent l'app ; les fichiers existants sont servis tels quels.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      # Les assets hashés ne changent jamais
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable
+      # sw.js et le HTML toujours revalidés, sinon les PWA installées ne voient pas les mises à jour
+      - path: /sw.js
+        name: Cache-Control
+        value: no-cache
+      - path: /index.html
+        name: Cache-Control
+        value: no-cache
+      # Render sert .webmanifest en binary/octet-stream par défaut
+      - path: /manifest.webmanifest
+        name: Content-Type
+        value: application/manifest+json
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
